@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.protocol;
 
 import com.sparrowwallet.drongo.Utils;
@@ -101,13 +102,7 @@ public class Transaction extends ChildMessage {
     }
 
     public boolean isReplaceByFee() {
-        for(TransactionInput input : inputs) {
-            if(input.isReplaceByFeeEnabled()) {
-                return true;
-            }
-        }
-
-        return false;
+        return false; // BitcoinSV does not opt in to Bitcoin's BIP125 replacement policy.
     }
 
     public Sha256Hash getTxId() {

@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.psbt;
 
 import com.sparrowwallet.drongo.ExtendedKey;
@@ -74,6 +75,7 @@ public class PSBT {
     private static final Logger log = LoggerFactory.getLogger(PSBT.class);
 
     public PSBT(Transaction transaction) {
+        BsvTransaction.requireTransaction(transaction);
         //Create PSBTv2 by default
         this.version = 2;
         this.txVersion = transaction.getVersion();
@@ -105,6 +107,8 @@ public class PSBT {
 
     public PSBT(WalletTransaction walletTransaction, Integer version, boolean includeGlobalXpubs) {
         Wallet wallet = walletTransaction.getWallet();
+        BsvTransaction.requireWallet(wallet);
+        BsvTransaction.requireTransaction(walletTransaction.getTransaction());
 
         //Default to PSBTv2
         if(version == null) {
@@ -244,6 +248,7 @@ public class PSBT {
         this.psbtBytes = psbt;
         try {
             parse(verifySignatures);
+            BsvTransaction.requireContainer(this);
         } catch(RuntimeException e) {
             throw new PSBTParseException("Invalid data in PSBT" + (e.getMessage() == null ? "" : ": " + e.getMessage()), e);
         }
@@ -1175,6 +1180,7 @@ public class PSBT {
     }
 
     public Transaction extractTransaction() throws PSBTProofException {
+        BsvTransaction.requireContainer(this);
         boolean hasWitness = false;
         for(PSBTInput psbtInput : getPsbtInputs()) {
             if(psbtInput.getFinalScriptWitness() != null) {
@@ -1217,6 +1223,7 @@ public class PSBT {
             validateSilentPayments(finalTransaction);
         }
 
+        BsvTransaction.requireTransaction(finalTransaction);
         return finalTransaction;
     }
 

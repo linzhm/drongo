@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.address;
 
 import com.sparrowwallet.drongo.Network;
@@ -86,69 +87,14 @@ public abstract class Address {
     }
 
     public static Address fromString(Network network, String address) throws InvalidAddressException {
-        Exception nested = null;
-
-        if(address != null) {
-            if(network.hasP2PKHAddressPrefix(address) || network.hasP2SHAddressPrefix(address)) {
-                try {
-                    byte[] decodedBytes = Base58.decodeChecked(address);
-                    if(decodedBytes.length == 21) {
-                        int version = Byte.toUnsignedInt(decodedBytes[0]);
-                        byte[] hash = Arrays.copyOfRange(decodedBytes, 1, 21);
-                        if(version == network.getP2PKHAddressHeader()) {
-                            return new P2PKHAddress(hash);
-                        }
-                        if(version == network.getP2SHAddressHeader()) {
-                            return new P2SHAddress(hash);
-                        }
-                    }
-                } catch(Exception e) {
-                    nested = e;
-                }
+        try {
+            byte[] decoded = Base58.decodeChecked(address);
+            if(decoded.length == 21 && Byte.toUnsignedInt(decoded[0]) == network.getP2PKHAddressHeader()) {
+                return new P2PKHAddress(Arrays.copyOfRange(decoded, 1, 21));
             }
-
-            if(address.toLowerCase(Locale.ROOT).startsWith(network.getBech32AddressHRP())) {
-                try {
-                    Bech32.Bech32Data data = Bech32.decode(address);
-                    if(data.hrp.equals(network.getBech32AddressHRP())) {
-                        int witnessVersion = data.data[0];
-                        if(witnessVersion == 0) {
-                            if(data.encoding != Bech32.Encoding.BECH32) {
-                                throw new InvalidAddressException("Invalid address - witness version is 0 but encoding is " + data.encoding);
-                            }
-
-                            byte[] convertedProgram = Arrays.copyOfRange(data.data, 1, data.data.length);
-                            byte[] witnessProgram = Bech32.convertBits(convertedProgram, 0, convertedProgram.length, 5, 8, false);
-                            if(witnessProgram.length == 20) {
-                                return new P2WPKHAddress(witnessProgram);
-                            }
-                            if(witnessProgram.length == 32) {
-                                return new P2WSHAddress(witnessProgram);
-                            }
-                        } else if(witnessVersion == 1) {
-                            if(data.encoding != Bech32.Encoding.BECH32M) {
-                                throw new InvalidAddressException("Invalid address - witness version is 1 but encoding is " + data.encoding);
-                            }
-
-                            byte[] convertedProgram = Arrays.copyOfRange(data.data, 1, data.data.length);
-                            byte[] witnessProgram = Bech32.convertBits(convertedProgram, 0, convertedProgram.length, 5, 8, false);
-                            if(witnessProgram.length == 32) {
-                                return new P2TRAddress(witnessProgram);
-                            } else if(Arrays.equals(witnessProgram, ScriptType.ANCHOR_WITNESS_PROGRAM)) {
-                                return new P2AAddress(witnessProgram);
-                            }
-                        }
-                    }
-                } catch(Exception e) {
-                    nested = e;
-                }
-            }
+        } catch(Exception e) {
+            throw new InvalidAddressException("Invalid BitcoinSV P2PKH address", e);
         }
-
-        if(nested != null) {
-            throw new InvalidAddressException("Could not parse invalid address " + address, nested);
-        }
-
-        throw new InvalidAddressException("Could not parse invalid address " + address);
+        throw new InvalidAddressException("Only BitcoinSV P2PKH addresses are supported; use an explicit template for bare multisig");
     }
 }

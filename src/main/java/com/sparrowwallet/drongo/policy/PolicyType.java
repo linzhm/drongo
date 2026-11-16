@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.policy;
 
 import com.sparrowwallet.drongo.protocol.ScriptType;
@@ -5,7 +6,7 @@ import com.sparrowwallet.drongo.protocol.ScriptType;
 import static com.sparrowwallet.drongo.protocol.ScriptType.*;
 
 public enum PolicyType {
-    SINGLE_HD("Single Signature HD", "Single Signature HD", P2WPKH), MULTI_HD("Multi Signature HD", "Multi Signature HD", P2WSH), SINGLE_SP("Single Signature SP", "Single Signature SP (Silent Payments)", P2TR);
+    SINGLE_HD("Single Signature HD", "Single Signature HD", P2PKH), MULTI_HD("Multi Signature HD", "Multi Signature HD", MULTISIG), SINGLE_SP("Single Signature SP", "Single Signature SP (Silent Payments)", P2TR);
 
     private final String name;
     private final String description;

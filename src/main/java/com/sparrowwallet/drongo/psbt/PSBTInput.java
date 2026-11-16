@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.psbt;
 
 import com.sparrowwallet.drongo.KeyDerivation;
@@ -116,7 +117,7 @@ public class PSBTInput {
             tapDerivedPublicKeys.put(this.tapInternalKey, Map.of(tapKeyDerivation, Collections.emptyList()));
         }
 
-        this.sigHash = (scriptType == P2TR ? SigHash.DEFAULT : SigHash.ALL);
+        this.sigHash = SigHash.ALL_FORKID;
 
         //Populate PSBTv2 fields if parent PSBT is v2
         if(psbt.getPsbtVersion() >= 2) {
@@ -180,10 +181,6 @@ public class PSBTInput {
                 case PSBT_IN_PARTIAL_SIG:
                     entry.checkOneBytePlusPubKey();
                     ECKey sigPublicKey = ECKey.fromPublicOnly(entry.getKeyData());
-                    if(entry.getData().length == 64 || entry.getData().length == 65) {
-                        log.error("Schnorr signature provided as ECDSA partial signature, ignoring");
-                        break;
-                    }
                     //TODO: Verify signature
                     TransactionSignature signature = TransactionSignature.decodeFromBitcoin(ECDSA, entry.getData(), true);
                     this.partialSignatures.put(sigPublicKey, signature);
@@ -195,6 +192,8 @@ public class PSBTInput {
                         throw new PSBTParseException("PSBT input sighash type must be 4 bytes");
                     }
                     long sighashType = Utils.readUint32(entry.getData(), 0);
+                    if(sighashType > 255) throw new PSBTParseException("BitcoinSV ForkID zero requires a one-byte sighash value");
+                    BsvTransaction.requireSigHash((int)sighashType);
                     SigHash sigHash = SigHash.fromByte((byte)sighashType);
                     this.sigHash = sigHash;
                     log.debug("Found input sighash_type " + sigHash.toString());
@@ -908,11 +907,7 @@ public class PSBTInput {
     }
 
     private SigHash getDefaultSigHash() {
-        if(isTaproot()) {
-            return SigHash.DEFAULT;
-        }
-
-        return SigHash.ALL;
+        return SigHash.ALL_FORKID;
     }
 
     public boolean signSilentPayments(ECKey spendPrivateKey) {
@@ -950,6 +945,7 @@ public class PSBTInput {
     }
 
     public boolean sign(PSBTInputSigner psbtInputSigner) {
+        BsvTransaction.requireContainer(psbt);
         SigHash localSigHash = getSigHash();
         if(localSigHash == null) {
             localSigHash = getDefaultSigHash();
@@ -958,14 +954,20 @@ public class PSBTInput {
         if(getNonWitnessUtxo() != null || getWitnessUtxo() != null) {
             Script signingScript = getSigningScript();
             if(signingScript != null) {
-                if((localSigHash == SigHash.SINGLE || localSigHash == SigHash.ANYONECANPAY_SINGLE) && index >= psbt.getTransaction().getOutputs().size()) {
+                if(((localSigHash.intValue() & 0x1f) == 3) && index >= psbt.getTransaction().getOutputs().size()) {
                     throw new IllegalStateException("Refusing to sign SIGHASH_SINGLE on input " + index
                             + " with only " + psbt.getTransaction().getOutputs().size() + " output(s) as it would produce a re-broadcastable signature");
                 }
 
+                ECKey expectedKey = psbtInputSigner.getPubKey();
+                boolean owns = ScriptType.P2PKH.isScriptType(signingScript)
+                        ? Arrays.equals(expectedKey.getPubKeyHash(), signingScript.getPubKeyHash())
+                        : Arrays.stream(ScriptType.MULTISIG.getPublicKeysFromScript(signingScript)).anyMatch(k -> Arrays.equals(k.getPubKey(), expectedKey.getPubKey()));
+                if(!owns) throw new IllegalArgumentException("Signing key does not belong to the BitcoinSV input script");
                 Sha256Hash hash = getHashForSignature(signingScript, localSigHash);
                 TransactionSignature.Type type = isTaproot() ? SCHNORR : ECDSA;
                 TransactionSignature transactionSignature = psbtInputSigner.sign(hash, localSigHash, type);
+                if(transactionSignature.sighashFlags != localSigHash.value || !transactionSignature.verify(hash.getBytes(), expectedKey)) throw new IllegalArgumentException("Signer returned an invalid BitcoinSV signature");
 
                 if(type == SCHNORR) {
                     tapKeyPathSignature = transactionSignature;
@@ -986,26 +988,26 @@ public class PSBTInput {
     }
 
     void verifySigHash(SigHash sigHash) throws PSBTSignatureException {
-        if(sigHash == null || sigHash == SigHash.ALL || sigHash == SigHash.DEFAULT) {
+        if(sigHash == null || sigHash == SigHash.ALL_FORKID) {
             return;
         }
 
         int numOutputs = psbt.getTransaction().getOutputs().size();
-        if((sigHash == SigHash.SINGLE || sigHash == SigHash.ANYONECANPAY_SINGLE) && index >= numOutputs) {
+        if(((sigHash.intValue() & 0x1f) == 3) && index >= numOutputs) {
             throw new PSBTSignatureException("Input " + index + " requests " + (sigHash == SigHash.ANYONECANPAY_SINGLE ? "SIGHASH_SINGLE | ANYONECANPAY" : "SIGHASH_SINGLE")
                     + ", but the transaction has only " + numOutputs + " output(s), so there is no output at that index. The signature would commit to no outputs at all, and could be re-used on a transaction with completely different outputs.");
         }
 
         switch(sigHash) {
-            case NONE:
+            case NONE, NONE_FORKID:
                 throw new PSBTSignatureException("Input " + index + " requests SIGHASH_NONE. The signature does not commit to any of the outputs, and can be re-used on a transaction with completely different outputs.");
-            case ANYONECANPAY_NONE:
+            case ANYONECANPAY_NONE, ANYONECANPAY_NONE_FORKID:
                 throw new PSBTSignatureException("Input " + index + " requests SIGHASH_NONE | ANYONECANPAY. The signature commits to neither inputs nor outputs and can be re-used in nearly any transaction.");
-            case ANYONECANPAY_SINGLE:
+            case ANYONECANPAY_SINGLE, ANYONECANPAY_SINGLE_FORKID:
                 throw new PSBTSignatureException("Input " + index + " requests SIGHASH_SINGLE | ANYONECANPAY. The signature only commits to one output, and other inputs may be added after signing.");
-            case SINGLE:
+            case SINGLE, SINGLE_FORKID:
                 throw new PSBTSignatureException("Input " + index + " requests SIGHASH_SINGLE. The signature only commits to the output at the same index, allowing other outputs to be added or modified after signing.");
-            case ANYONECANPAY_ALL:
+            case ANYONECANPAY_ALL, ANYONECANPAY_ALL_FORKID:
                 throw new PSBTSignatureException("Input " + index + " requests SIGHASH_ALL | ANYONECANPAY. Other inputs may be added to the transaction after signing, potentially redirecting value through fees.");
             case ANYONECANPAY:
                 throw new PSBTSignatureException("Input " + index + " requests a non-standard ANYONECANPAY sighash with no base type. The resulting signature has unpredictable commitment semantics.");
@@ -1031,7 +1033,7 @@ public class PSBTInput {
                 } else {
                     for(ECKey sigPublicKey : getPartialSignatures().keySet()) {
                         TransactionSignature signature = getPartialSignature(sigPublicKey);
-                        if(!sigPublicKey.verify(hash, signature)) {
+                        if((getSigHash() != null && signature.sighashFlags != getSigHash().value) || !sigPublicKey.verify(getHashForSignature(signingScript, signature.sighashFlags), signature)) {
                             throw new PSBTSignatureException("Partial signature does not verify against provided public key");
                         }
                     }
@@ -1246,19 +1248,8 @@ public class PSBTInput {
     }
 
     private Sha256Hash getHashForSignature(Script connectedScript, byte sigHashType) {
-        Sha256Hash hash;
-
-        ScriptType scriptType = getScriptType();
-        if(scriptType == ScriptType.P2TR) {
-            List<TransactionOutput> spentUtxos = psbt.getPsbtInputs().stream().map(PSBTInput::getUtxo).collect(Collectors.toList());
-            hash = psbt.getTransaction().hashForTaprootSignature(spentUtxos, index, !P2TR.isScriptType(connectedScript), connectedScript, sigHashType, null);
-        } else if(Arrays.asList(WITNESS_TYPES).contains(scriptType)) {
-            long prevValue = getUtxo().getValue();
-            hash = psbt.getTransaction().hashForWitnessSignature(index, connectedScript.getProgram(), prevValue, sigHashType);
-        } else {
-            hash = psbt.getTransaction().hashForLegacySignature(index, connectedScript.getProgram(), sigHashType);
-        }
-
-        return hash;
+        BsvTransaction.requireContainer(psbt);
+        if(getNonWitnessUtxo() == null || getUtxo() == null) throw new IllegalArgumentException("BitcoinSV signing requires the complete previous transaction");
+        return BsvTransaction.signatureHash(psbt.getTransaction(), index, connectedScript, getUtxo().getValue(), Byte.toUnsignedInt(sigHashType));
     }
 }

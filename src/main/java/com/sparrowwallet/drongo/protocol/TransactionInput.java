@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.protocol;
 
 import com.sparrowwallet.drongo.Utils;
@@ -141,7 +142,7 @@ public class TransactionInput extends ChildMessage {
     }
 
     public boolean isReplaceByFeeEnabled() {
-        return sequence <= SEQUENCE_RBF_ENABLED;
+        return false; // BIP125 is not a BitcoinSV policy. Preserve the actual sequence bytes.
     }
 
     public boolean isAbsoluteTimeLockDisabled() {

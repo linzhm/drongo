@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.crypto;
 
 import com.sparrowwallet.drongo.protocol.SigHash;
@@ -226,7 +227,7 @@ public class ECDSASignature {
             return false;
         }
 
-        int hashType = (signature[signature.length - 1] & 0xff) & ~SigHash.ANYONECANPAY.value; // mask the byte to prevent sign-extension hurting us
+        int hashType = (signature[signature.length - 1] & 0xff) & ~(0x80 | 0x40); // mask the byte to prevent sign-extension hurting us
         if(hashType < SigHash.ALL.value || hashType > SigHash.SINGLE.value) {
             return false;
         }

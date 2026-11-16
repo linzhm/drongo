@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.uri;
 
 import com.sparrowwallet.drongo.Network;
@@ -132,6 +133,8 @@ public class BitcoinURI {
             nameValuePairTokens = addressSplitTokens[1].split("&");
         }
 
+        if(!java.util.Arrays.asList(nameValuePairTokens).contains("sv")) throw new BitcoinURIParseException("A BitcoinSV payment URI must include the sv network marker");
+        nameValuePairTokens = java.util.Arrays.stream(nameValuePairTokens).filter(token -> !token.equals("sv")).toArray(String[]::new);
         // Attempt to parse the rest of the URI parameters.
         parseParameters(addressToken, nameValuePairTokens);
 
@@ -371,7 +374,7 @@ public class BitcoinURI {
      */
     public static BitcoinURI fromAddress(Address address) {
         try {
-            return new BitcoinURI(BITCOIN_SCHEME + ":" + address.toString());
+            return new BitcoinURI(BITCOIN_SCHEME + ":" + address.toString() + "?sv");
         } catch(BitcoinURIParseException e) {
             //Can't happen
             return null;
@@ -436,6 +439,7 @@ public class BitcoinURI {
             builder.append(FIELD_MESSAGE).append("=").append(encodeURLString(message));
         }
 
+        builder.append(builder.indexOf("?") >= 0 ? AMPERSAND_SEPARATOR : QUESTION_MARK_SEPARATOR).append("sv");
         return builder.toString();
     }
 
