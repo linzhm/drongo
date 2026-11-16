@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.protocol;
 
 import com.sparrowwallet.drongo.KeyDerivation;
@@ -1508,11 +1509,11 @@ public enum ScriptType {
     public static final byte[] ANCHOR_WITNESS_PROGRAM = new byte[]{78, 115};
 
     public static List<ScriptType> getScriptTypesForPolicyType(PolicyType policyType) {
-        return Arrays.stream(values()).filter(scriptType -> scriptType.isAllowed(policyType)).collect(Collectors.toList());
+        return policyType == PolicyType.SINGLE_HD ? List.of(P2PKH) : List.of();
     }
 
     public static List<ScriptType> getAddressableScriptTypes(PolicyType policyType) {
-        return Arrays.stream(ADDRESSABLE_TYPES).filter(scriptType -> scriptType.isAllowed(policyType)).collect(Collectors.toList());
+        return getScriptTypesForPolicyType(policyType);
     }
 
     public static ScriptType getType(Script script) {

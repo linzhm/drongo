@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo;
 
 import com.sparrowwallet.drongo.protocol.Transaction;
@@ -14,7 +15,7 @@ public enum BitcoinUnit {
             throw new UnsupportedOperationException("Auto unit cannot convert bitcoin values");
         }
     },
-    BTC("BTC") {
+    BSV("BSV") {
         @Override
         public long getSatsValue(double unitValue) {
             return Math.round(unitValue * Transaction.SATOSHIS_PER_BITCOIN);

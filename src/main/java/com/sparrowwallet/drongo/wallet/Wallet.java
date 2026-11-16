@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.wallet;
 
 import com.sparrowwallet.drongo.*;
@@ -1080,6 +1081,8 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
     }
 
     public WalletTransaction createWalletTransaction(TransactionParameters params) throws InsufficientFundsException {
+        BsvTransaction.requireWallet(this);
+        params.getPaymentAddresses().forEach(address -> BsvTransaction.requireOutput(address.getOutputScript()));
         long totalPaymentAmount = params.getTotalPaymentAmount();
         Map<BlockTransactionHashIndex, WalletNode> availableTxos = getWalletTxos(params.txoFilters());
         long totalAvailableValue = availableTxos.keySet().stream().mapToLong(BlockTransactionHashIndex::getValue).sum();
@@ -1109,7 +1112,7 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
             List<Payment> txPayments = new ArrayList<>(params.payments());
             List<WalletTransaction.Output> outputs = new ArrayList<>();
             Set<WalletNode> txExcludedChangeNodes = new HashSet<>(params.excludedChangeNodes());
-            long sequence = params.allowRbf() ? TransactionInput.SEQUENCE_RBF_ENABLED : TransactionInput.SEQUENCE_RBF_DISABLED;
+            long sequence = TransactionInput.SEQUENCE_RBF_DISABLED;
 
             Transaction transaction = new Transaction();
             transaction.setVersion(2);
@@ -1560,8 +1563,7 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
                                                                                          Map<TransactionInput, WalletNode> signingNodes) {
         Map<TransactionInput, Map<TransactionSignature, Keystore>> signedKeystores = new LinkedHashMap<>();
 
-        boolean anyTaproot = signingNodes.values().stream().anyMatch(node -> node.getWallet().getScriptType() == P2TR);
-        List<TransactionOutput> spentOutputs = anyTaproot ? getSpentOutputs(transaction, inputTransactions) : null;
+        BsvTransaction.requireTransaction(transaction);
 
         for(TransactionInput txInput : signingNodes.keySet()) {
             WalletNode walletNode = signingNodes.get(txInput);
@@ -1576,25 +1578,18 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
             Map<ECKey, TransactionSignature> keySignatureMap = new LinkedHashMap<>();
 
             Transaction inputTransaction = inputTransactions.apply(txInput.getOutpoint().getHash());
-            boolean taproot = signingWallet.getScriptType() == P2TR;
-            if(inputTransaction != null && inputTransaction.getOutputs().size() > txInput.getOutpoint().getIndex() && (!taproot || spentOutputs != null)) {
+            if(inputTransaction != null && inputTransaction.getTxId().equals(txInput.getOutpoint().getHash()) && inputTransaction.getOutputs().size() > txInput.getOutpoint().getIndex()) {
                 TransactionOutput spentTxo = inputTransaction.getOutputs().get((int)txInput.getOutpoint().getIndex());
 
                 Script signingScript = getSigningScript(txInput, spentTxo);
-                List<TransactionSignature> signatures = txInput.hasWitness() ? txInput.getWitness().getSignatures() : txInput.getScriptSig().getSignatures();
+                List<TransactionSignature> signatures = txInput.getScriptSig().getSignatures();
                 Map<Byte, Sha256Hash> sigHashes = new HashMap<>();
 
                 for(ECKey sigPublicKey : keystoreKeysForNode.keySet()) {
                     for(TransactionSignature signature : signatures) {
-                        Sha256Hash hash = sigHashes.computeIfAbsent(signature.sighashFlags, sigHashType -> {
-                            if(signingWallet.getScriptType() == P2TR) {
-                                return transaction.hashForTaprootSignature(spentOutputs, txInput.getIndex(), !P2TR.isScriptType(signingScript), signingScript, sigHashType, null);
-                            } else if(txInput.hasWitness()) {
-                                return transaction.hashForWitnessSignature(txInput.getIndex(), signingScript.getProgram(), spentTxo.getValue(), sigHashType);
-                            } else {
-                                return transaction.hashForLegacySignature(txInput.getIndex(), signingScript.getProgram(), sigHashType);
-                            }
-                        });
+                        if(!BsvTransaction.SIGHASHES.contains(Byte.toUnsignedInt(signature.sighashFlags))) continue;
+                        Sha256Hash hash = sigHashes.computeIfAbsent(signature.sighashFlags, flag ->
+                                BsvTransaction.signatureHash(transaction, txInput.getIndex(), signingScript, spentTxo.getValue(), Byte.toUnsignedInt(flag)));
 
                         if(sigPublicKey.verify(hash, signature)) {
                             keySignatureMap.put(sigPublicKey, signature);
@@ -1890,6 +1885,8 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
     }
 
     public void sign(PSBT psbt) throws MnemonicException {
+        BsvTransaction.requireWallet(this);
+        BsvTransaction.requireContainer(psbt);
         if(psbt.getPsbtOutputs().stream().anyMatch(o -> o.getSilentPaymentAddress() != null)) {
             List<PSBTInput> psbtInputs = psbt.getPsbtInputs();
             for(int i = 0; i < psbtInputs.size(); i++) {
@@ -1904,6 +1901,7 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
     }
 
     public void sign(Map<PSBTInput, WalletNode> signingNodes) throws MnemonicException {
+        BsvTransaction.requireWallet(this);
         for(Map.Entry<PSBTInput, WalletNode> signingEntry : signingNodes.entrySet()) {
             Wallet signingWallet = signingEntry.getValue().getWallet();
             for(Keystore keystore : signingWallet.getKeystores()) {
@@ -2236,7 +2234,7 @@ public class Wallet extends Persistable implements Comparable<Wallet> {
             for(WalletNode addressNode : getNode(keyPurpose).getChildren()) {
                 for(BlockTransactionHashIndex output : addressNode.getTransactionOutputs()) {
                     if(output.getValue() >= BitcoinUnit.getAutoThreshold()) {
-                        return BitcoinUnit.BTC;
+                        return BitcoinUnit.BSV;
                     }
                 }
             }

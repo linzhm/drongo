@@ -1,3 +1,4 @@
+// Modified for Goshawk BitcoinSV, 2026-11-16.
 package com.sparrowwallet.drongo.protocol;
 
 import com.sparrowwallet.drongo.crypto.ECDSASignature;
@@ -68,6 +69,7 @@ public class TransactionSignature {
     }
 
     public SigHash getSigHash() {
+        if((sighashFlags & 0x40) != 0) return SigHash.fromByte(sighashFlags);
         if(sighashFlags == SigHash.DEFAULT.byteValue()) {
             return SigHash.DEFAULT;
         }
@@ -111,10 +113,6 @@ public class TransactionSignature {
     }
 
     public static TransactionSignature decodeFromBitcoin(byte[] bytes, boolean requireCanonicalEncoding) throws SignatureDecodeException {
-        if(bytes.length == 64 || bytes.length == 65) {
-            return decodeFromBitcoin(Type.SCHNORR, bytes, requireCanonicalEncoding);
-        }
-
         return decodeFromBitcoin(Type.ECDSA, bytes, requireCanonicalEncoding);
     }
 
